@@ -1,0 +1,66 @@
+---
+# Agent Client Collector configuration
+
+backend-url:
+{% for endpoint in snowagent_mid_servers.endpoints %}
+  - "wss://{{ endpoint }}:{{ snowagent_mid_port }}/ws/events"
+{% endfor %}
+
+##
+# configuring connections to instance without a MID
+##
+#connect-without-mid: true
+#instance-url: ""
+#registration-key: ""
+
+# Single authentication configuration for all backend-URLs:
+# Specify the user name as defined on the MID web server.
+#user: "admin"
+# Specify the password as defined on the MID web server.
+#password: "admin"
+# Specify the API key used by the MID to authenticate incoming Agent connections
+{% if snowagent_acc_key is defined and snowagent_acc_key | length > 0 %}
+api-key: "{{ snowagent_acc_key }}"
+{% endif %}
+
+##
+# Agent log file
+##
+# Linux   location   : /var/log/servicenow/agent-client-collector/acc.log
+# Windows location   : C:\ProgramData\ServiceNow\agent-client-collector\log\acc.log
+
+# Allowed log-level values: panic, fatal, error, warn, info, debug
+log-level: "info"
+
+##
+# security configuration
+# in case the MID Web server is configured to use secure connection, refer to the following attributes:
+# Setting to false (which is not the default value) will force certificate verification on the backend-client connection
+insecure-skip-tls-verify: true
+# Specify location of the SSL certificate file
+#trusted-ca-file: "/path/to/trusted-certificate-authorities.pem"
+
+# Path to json file that contains the allow list of check or hook commands the agent can execute
+allow-list: /etc/servicenow/agent-client-collector/check-allow-list.json
+
+# Specify if plugins should be verified, Default = true.
+#verify-plugin-signature: true
+
+# Specify the maximum number of checks that can run in parallel.
+max-running-checks: 10
+
+# Defines the threshold for agent CPU usage. If threshold is exceeded, data collection will be turned off.
+agent_cpu_threshold:
+  cpu_percentage_limit: 5
+  repeated_high_cpu_num: 3
+  monitor_interval_sec: 60
+  agent_cpu_threshold_disabled: false
+  proxy_cpu_percentage_limit: 80
+
+disable-sockets: true
+statsd-disable: true
+
+enable-auto-mid-selection: true
+
+# Specifies whether executables in the system PATH or ACC plugin executables have preference.  Default is plugin executables (value: false).
+#check-commands-prefer-installed: false

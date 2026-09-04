@@ -1,0 +1,21 @@
+---
+snowagent_s3_bucket: "hts-ansible-packages-s3"
+snowagent_s3_prefix: "servicenow-acc"
+snowagent_s3_region: "us-east-1"
+snowagent_s3_role_arn: "arn:aws:iam::027856332022:role/HTSAnsiblePackageRead"
+snowagent_s3_role_session_name: "aap-servicenow-acc-download"
+
+snowagent_package_prefix: "agent-client-collector-"
+
+snowagent_acc_versions:
+  staging:
+    windows: "6.3.0"
+    linux: "6.3.0"
+  production:
+    windows: "6.3.0"
+    linux: "6.3.0"
+
+snowagent_mid_servers:
+  endpoints:
+    - "snowaccmid1.hearst.com"
+    - "snowaccmid2.hearst.com"

@@ -1,0 +1,152 @@
+---
+- name: Install and configure ServiceNow ACC on Windows from S3
+  hosts: all
+  gather_facts: false
+
+  vars_files:
+    - vars/snowagent.yaml
+
+  vars:
+    snowagent_policy_group: "{{ policy_group | default('staging') }}"
+    snowagent_working_dir: 'C:\Temp'
+    snowagent_service_name: AgentClientCollector
+
+    snowagent_environment: >-
+      {{
+        'staging'
+        if (snowagent_policy_group is regex('local|staging'))
+        else 'production'
+      }}
+
+    snowagent_mid_port: >-
+      {{
+        '8800'
+        if (snowagent_policy_group is regex('local|staging'))
+        else '443'
+      }}
+
+    snowagent_version: "{{ snowagent_acc_versions[snowagent_environment]['windows'] }}"
+    snowagent_package_suffix: "-windows-x64.msi"
+
+    snowagent_package_name: >-
+      {{ snowagent_package_prefix }}{{ snowagent_version }}{{ snowagent_package_suffix }}
+
+    snowagent_s3_object: >-
+      {{ snowagent_s3_prefix }}/{{ snowagent_package_name }}
+
+    snowagent_install_file: >-
+      {{ snowagent_working_dir }}\{{ snowagent_package_name }}
+
+    snowagent_mid_string: >-
+      {{
+        'wss://' ~ snowagent_mid_servers.endpoints[0] ~ ':' ~ snowagent_mid_port ~ '/ws/events,'
+        ~ 'wss://' ~ snowagent_mid_servers.endpoints[1] ~ ':' ~ snowagent_mid_port ~ '/ws/events'
+      }}
+
+  pre_tasks:
+    - name: Set Kerberos password variable
+      ansible.builtin.set_fact:
+        kerberos_password: "{{ ansible_password | default(ansible_ssh_pass | default('')) }}"
+      no_log: true
+
+    - name: Obtain Kerberos ticket
+      ansible.builtin.shell: |
+        printf '%s\n' "{{ kerberos_password }}" | /usr/bin/kinit -V "{{ ansible_user }}"
+      delegate_to: localhost
+      changed_when: false
+      no_log: true
+
+    - name: Gather Windows facts
+      ansible.windows.setup:
+
+  tasks:
+    - name: Ensure ACC API key was provided
+      ansible.builtin.assert:
+        that:
+          - snowagent_acc_key is defined
+          - snowagent_acc_key | length > 0
+        fail_msg: "snowagent_acc_key was not provided by the attached AAP credential."
+      no_log: true
+
+    - name: Create temporary ACC package directory on execution node
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: snowagent-acc-
+      register: snowagent_download_dir
+      delegate_to: localhost
+      run_once: true
+
+    - name: Assume read-only S3 artifact role
+      amazon.aws.sts_assume_role:
+        role_arn: "{{ snowagent_s3_role_arn }}"
+        role_session_name: "{{ snowagent_s3_role_session_name }}"
+        region: "{{ snowagent_s3_region }}"
+      register: snowagent_s3_role
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+    - name: Download ACC MSI from S3 to execution node
+      amazon.aws.s3_object:
+        bucket: "{{ snowagent_s3_bucket }}"
+        object: "{{ snowagent_s3_object }}"
+        dest: "{{ snowagent_download_dir.path }}/{{ snowagent_package_name }}"
+        mode: get
+        overwrite: different
+        region: "{{ snowagent_s3_region }}"
+        access_key: "{{ snowagent_s3_role.sts_creds.access_key }}"
+        secret_key: "{{ snowagent_s3_role.sts_creds.secret_key }}"
+        session_token: "{{ snowagent_s3_role.sts_creds.session_token }}"
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+    - name: Ensure Windows temporary directory exists
+      ansible.windows.win_file:
+        path: "{{ snowagent_working_dir }}"
+        state: directory
+
+    - name: Copy ACC MSI from execution node to Windows host
+      ansible.windows.win_copy:
+        src: "{{ snowagent_download_dir.path }}/{{ snowagent_package_name }}"
+        dest: "{{ snowagent_install_file }}"
+
+    - name: Install or upgrade ACC agent
+      ansible.windows.win_package:
+        path: "{{ snowagent_install_file }}"
+        state: present
+        arguments: >-
+          /quiet /qn /norestart
+          ACC_API_KEY="{{ snowagent_acc_key }}"
+          ACC_MID="{{ snowagent_mid_string }}"
+      register: acc_install
+      no_log: true
+
+    - name: Ensure AgentClientCollector service is started
+      ansible.windows.win_service:
+        name: "{{ snowagent_service_name }}"
+        state: started
+      register: snowagent_service_result
+      retries: 3
+      delay: 10
+      until: snowagent_service_result is succeeded
+
+    - name: Set servicenow password to never expire
+      ansible.windows.win_shell: |
+        $user = Get-LocalUser -Name "servicenow" -ErrorAction SilentlyContinue
+        if ($user) {
+          $user | Set-LocalUser -PasswordNeverExpires $true
+        }
+      changed_when: false
+
+    - name: Remove staged ACC MSI from Windows host
+      ansible.windows.win_file:
+        path: "{{ snowagent_install_file }}"
+        state: absent
+
+    - name: Remove temporary ACC package directory from execution node
+      ansible.builtin.file:
+        path: "{{ snowagent_download_dir.path }}"
+        state: absent
+      delegate_to: localhost
+      run_once: true
