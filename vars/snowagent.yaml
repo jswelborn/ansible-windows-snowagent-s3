@@ -12,8 +12,8 @@ snowagent_acc_versions:
     windows: "6.3.0"
     linux: "6.3.0"
   production:
-    windows: "6.3.0"
-    linux: "6.3.0"
+    windows: "6.6.4"
+    linux: "6.6.4"
 
 snowagent_mid_servers:
   endpoints:
