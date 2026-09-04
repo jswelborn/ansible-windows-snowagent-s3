@@ -11,6 +11,10 @@
     snowagent_working_dir: 'C:\Temp'
     snowagent_service_name: AgentClientCollector
 
+    snowagent_config_dir: 'C:\ProgramData\ServiceNow\agent-client-collector\config'
+    snowagent_config_file: 'C:\ProgramData\ServiceNow\agent-client-collector\config\acc.yml'
+    snowagent_allow_list_path: 'C:\ProgramData\ServiceNow\agent-client-collector\config\check-allow-list.json'
+
     snowagent_environment: >-
       {{
         'staging'
@@ -53,6 +57,7 @@
       ansible.builtin.shell: |
         printf '%s\n' "{{ kerberos_password }}" | /usr/bin/kinit -V "{{ ansible_user }}"
       delegate_to: localhost
+      run_once: true
       changed_when: false
       no_log: true
 
@@ -120,6 +125,22 @@
           ACC_API_KEY="{{ snowagent_acc_key }}"
           ACC_MID="{{ snowagent_mid_string }}"
       register: acc_install
+      no_log: true
+
+    - name: Stop AgentClientCollector before applying configuration
+      ansible.windows.win_service:
+        name: "{{ snowagent_service_name }}"
+        state: stopped
+
+    - name: Ensure ACC configuration directory exists
+      ansible.windows.win_file:
+        path: "{{ snowagent_config_dir }}"
+        state: directory
+
+    - name: Deploy ServiceNow ACC configuration
+      ansible.windows.win_template:
+        src: templates/acc.yaml.j2
+        dest: "{{ snowagent_config_file }}"
       no_log: true
 
     - name: Ensure AgentClientCollector service is started
