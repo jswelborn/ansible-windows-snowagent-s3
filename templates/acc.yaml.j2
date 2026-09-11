@@ -41,7 +41,7 @@ insecure-skip-tls-verify: true
 #trusted-ca-file: "/path/to/trusted-certificate-authorities.pem"
 
 # Path to json file that contains the allow list of check or hook commands the agent can execute
-allow-list: /etc/servicenow/agent-client-collector/check-allow-list.json
+allow-list: "{{ snowagent_allow_list_path | default('/etc/servicenow/agent-client-collector/check-allow-list.json') }}"
 
 # Specify if plugins should be verified, Default = true.
 #verify-plugin-signature: true

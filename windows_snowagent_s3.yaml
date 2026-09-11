@@ -143,14 +143,57 @@
         dest: "{{ snowagent_config_file }}"
       no_log: true
 
-    - name: Ensure AgentClientCollector service is started
+    - name: Ensure AgentClientCollector service starts automatically and is running
       ansible.windows.win_service:
         name: "{{ snowagent_service_name }}"
+        start_mode: auto
         state: started
       register: snowagent_service_result
       retries: 3
       delay: 10
       until: snowagent_service_result is succeeded
+
+    - name: Get installed ACC version
+      ansible.windows.win_shell: |
+        $acc = Get-ItemProperty `
+          'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+          'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+          -ErrorAction SilentlyContinue |
+          Where-Object {
+            $_.DisplayName -match 'Agent Client Collector|ServiceNow ACC'
+          } |
+          Select-Object -First 1
+
+        if (-not $acc) {
+          throw "ServiceNow ACC is not registered as installed."
+        }
+
+        $acc.DisplayVersion
+      register: snowagent_installed_version
+      changed_when: false
+
+    - name: Gather AgentClientCollector service information
+      ansible.windows.win_service_info:
+        name: "{{ snowagent_service_name }}"
+      register: snowagent_service_info
+
+    - name: Fail when AgentClientCollector service is missing
+      ansible.builtin.fail:
+        msg: "AgentClientCollector is not installed as a Windows service."
+      when: not snowagent_service_info.exists | default(false)
+
+    - name: Fail when AgentClientCollector service is not running
+      ansible.builtin.fail:
+        msg: "AgentClientCollector is installed but is not running."
+      when:
+        - snowagent_service_info.exists | default(false)
+        - snowagent_service_info.services[0].state != "started"
+
+    - name: Show installed ACC version
+      ansible.builtin.debug:
+        msg: >-
+          ServiceNow ACC {{ snowagent_installed_version.stdout | trim }}
+          is installed and AgentClientCollector is running.
 
     - name: Set servicenow password to never expire
       ansible.windows.win_shell: |
