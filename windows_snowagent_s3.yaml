@@ -64,6 +64,19 @@
     - name: Gather Windows facts
       ansible.windows.setup:
 
+    - name: Report that legacy Windows Server is being skipped
+      ansible.builtin.debug:
+        msg: >-
+          Skipping ServiceNow ACC deployment on legacy Windows Server
+          {{ ansible_distribution }} ({{ ansible_distribution_version }}).
+      when: >-
+        ansible_distribution_version is regex('^(6\.0|6\.1|6\.2|6\.3)(\.|$)')
+
+    - name: End host for Windows Server 2008 and 2012 families
+      ansible.builtin.meta: end_host
+      when: >-
+        ansible_distribution_version is regex('^(6\.0|6\.1|6\.2|6\.3)(\.|$)')
+
   tasks:
     - name: Ensure ACC API key was provided
       ansible.builtin.assert:
@@ -195,11 +208,13 @@
           ServiceNow ACC {{ snowagent_installed_version.stdout | trim }}
           is installed and AgentClientCollector is running.
 
-    - name: Set servicenow password to never expire
+    - name: Set servicenow password to never expire when supported
       ansible.windows.win_shell: |
-        $user = Get-LocalUser -Name "servicenow" -ErrorAction SilentlyContinue
-        if ($user) {
-          $user | Set-LocalUser -PasswordNeverExpires $true
+        if (Get-Command Get-LocalUser -ErrorAction SilentlyContinue) {
+          $user = Get-LocalUser -Name "servicenow" -ErrorAction SilentlyContinue
+          if ($user) {
+            $user | Set-LocalUser -PasswordNeverExpires $true
+          }
         }
       changed_when: false
 
